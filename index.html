@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gachapon Master - Miguel Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            background-color: #1a1a2e;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        .retro-font {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.7rem;
+        }
+
+        .machine-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            height: 90vh;
+            background: #333;
+            border: 8px solid #444;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }
+
+        .glass-area {
+            position: relative;
+            flex-grow: 1;
+            background: linear-gradient(180deg, #1e3a8a 0%, #172554 100%);
+            margin: 10px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 4px solid #222;
+        }
+
+        .control-panel {
+            height: 180px;
+            background: #ef4444;
+            margin: 0 10px 10px 10px;
+            border-radius: 10px;
+            border: 4px solid #b91c1c;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 10px;
+            position: relative;
+        }
+
+        .btn-drop {
+            width: 90px;
+            height: 90px;
+            background: #facc15;
+            border-radius: 50%;
+            border: 6px solid #eab308;
+            color: #854d0e;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 8px 0 #ca8a04;
+            user-select: none;
+            transition: all 0.1s;
+        }
+
+        .btn-drop:active {
+            transform: translateY(4px);
+            box-shadow: 0 4px 0 #ca8a04;
+        }
+
+        .prize-chute {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100px;
+            height: 80px;
+            background: #111;
+            border-top-right-radius: 20px;
+            border-right: 4px solid #444;
+            border-top: 4px solid #444;
+        }
+
+        .message-box {
+            position: absolute;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            border: 2px solid #facc15;
+            z-index: 100;
+            display: none;
+            text-align: center;
+        }
+
+        #score-display {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #222;
+            padding: 5px 15px;
+            border-radius: 5px;
+            border: 2px solid #444;
+            color: #4ade80;
+        }
+
+        #audio-toggle {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: #444;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 10px;
+            cursor: pointer;
+            z-index: 1000;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div class="machine-container mt-4">
+    <div class="glass-area">
+        <button id="audio-toggle" class="retro-font">🔇 SONIDO: OFF</button>
+        <div id="score-display" class="retro-font">PREMIOS: 0</div>
+        <div id="status-msg" class="message-box retro-font text-yellow-400">¡TE LLEVASTE UN PELUCHE!</div>
+        <canvas id="gameCanvas"></canvas>
+        <div class="prize-chute"></div>
+    </div>
+
+    <div class="control-panel">
+        <div class="flex flex-col items-center">
+            <span class="retro-font mb-2 text-[10px]">MOVER</span>
+            <div class="flex gap-4">
+                <button id="moveLeft" class="bg-gray-800 p-4 rounded-lg border-b-4 border-black active:border-b-0 active:translate-y-1">◀</button>
+                <button id="moveRight" class="bg-gray-800 p-4 rounded-lg border-b-4 border-black active:border-b-0 active:translate-y-1">▶</button>
+            </div>
+        </div>
+
+        <button id="dropBtn" class="btn-drop retro-font text-[10px]">¡BAJAR!</button>
+        
+        <div class="text-center hidden sm:block">
+            <div class="retro-font text-xs mb-1">MIGUEL'S</div>
+            <div class="retro-font text-[10px]">ARCADE</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('score-display');
+    const statusMsg = document.getElementById('status-msg');
+    const audioToggle = document.getElementById('audio-toggle');
+
+    // Configuración de Audio
+    let audioCtx = null;
+    let audioEnabled = false;
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    function playTone(freq, type, duration, volume = 0.1) {
+        if (!audioEnabled || !audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        
+        gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function playMoveSound() {
+        if (Math.random() > 0.8) playTone(150, 'square', 0.05, 0.02);
+    }
+
+    function playDropSound() {
+        playTone(300, 'sawtooth', 0.5, 0.05);
+        setTimeout(() => playTone(200, 'sawtooth', 0.5, 0.05), 100);
+    }
+
+    function playClashSound() {
+        playTone(100, 'triangle', 0.2, 0.2);
+    }
+
+    function playWinSound() {
+        const notes = [523.25, 659.25, 783.99, 1046.50];
+        notes.forEach((f, i) => {
+            setTimeout(() => playTone(f, 'sine', 0.4, 0.1), i * 150);
+        });
+    }
+
+    function playFailSound() {
+        playTone(150, 'sawtooth', 0.5, 0.1);
+        setTimeout(() => playTone(100, 'sawtooth', 0.5, 0.1), 200);
+    }
+
+    // Configuración del juego
+    let width, height;
+    let score = 0;
+    let prizes = [];
+    let state = 'IDLE'; 
+    
+    const claw = {
+        x: 150,
+        y: 50,
+        width: 60,
+        height: 40,
+        open: 1,
+        speed: 3,
+        cableColor: '#ccc',
+        heldPrize: null
+    };
+
+    const emojis = ['🧸', '🐼', '🐰', '🐱', '🐶', '🦊', '🦁', '🐯', '🦄'];
+    
+    function init() {
+        resize();
+        spawnPrizes();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function resize() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        width = canvas.width = rect.width;
+        height = canvas.height = rect.height;
+    }
+
+    class Prize {
+        constructor() {
+            this.reset();
+            this.y = height - 40 - Math.random() * 60;
+        }
+
+        reset() {
+            this.x = 110 + Math.random() * (width - 150);
+            this.y = height - 40;
+            this.size = 35;
+            this.emoji = emojis[Math.floor(Math.random() * emojis.length)];
+            this.rotation = (Math.random() - 0.5) * 0.5;
+            this.vx = 0;
+            this.vy = 0;
+            this.isHeld = false;
+        }
+
+        draw() {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.rotation);
+            ctx.font = `${this.size}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(this.emoji, 0, 0);
+            ctx.restore();
+        }
+
+        update() {
+            if (this.isHeld) {
+                this.x = claw.x;
+                this.y = claw.y + 40;
+                this.rotation = Math.sin(Date.now() / 200) * 0.1;
+                return;
+            }
+
+            if (this.y < height - 40) {
+                this.vy += 0.5;
+                this.y += this.vy;
+                this.x += this.vx;
+            } else {
+                this.y = height - 40;
+                this.vy = 0;
+                this.vx *= 0.9;
+            }
+
+            if (this.x < 20) this.x = 20;
+            if (this.x > width - 20) this.x = width - 20;
+        }
+    }
+
+    function spawnPrizes() {
+        prizes = [];
+        for (let i = 0; i < 15; i++) {
+            prizes.push(new Prize());
+        }
+    }
+
+    function drawClaw() {
+        ctx.strokeStyle = claw.cableColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(claw.x, 0);
+        ctx.lineTo(claw.x, claw.y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#666';
+        ctx.fillRect(claw.x - 20, claw.y - 10, 40, 15);
+
+        const angle = 0.2 + (claw.open * 0.8);
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+
+        ctx.save();
+        ctx.translate(claw.x - 15, claw.y + 5);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-15, 30);
+        ctx.lineTo(-5, 45);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(claw.x + 15, claw.y + 5);
+        ctx.rotate(-angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(15, 30);
+        ctx.lineTo(5, 45);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    function showMessage(text) {
+        statusMsg.innerText = text;
+        statusMsg.style.display = 'block';
+        setTimeout(() => {
+            statusMsg.style.display = 'none';
+        }, 3000);
+    }
+
+    function update() {
+        prizes.forEach(p => p.update());
+
+        switch(state) {
+            case 'MOVING_LEFT':
+                if (claw.x > 30) {
+                    claw.x -= claw.speed;
+                    playMoveSound();
+                }
+                break;
+            case 'MOVING_RIGHT':
+                if (claw.x < width - 30) {
+                    claw.x += claw.speed;
+                    playMoveSound();
+                }
+                break;
+            case 'DROPPING':
+                claw.open = Math.min(1, claw.open + 0.1);
+                if (claw.y < height - 80) {
+                    claw.y += claw.speed * 1.5;
+                } else {
+                    playClashSound();
+                    state = 'GRABBING';
+                }
+                break;
+            case 'GRABBING':
+                claw.open = Math.max(0.1, claw.open - 0.05);
+                if (claw.open <= 0.1) {
+                    let caught = null;
+                    prizes.forEach(p => {
+                        const dx = p.x - claw.x;
+                        const dy = p.y - (claw.y + 40);
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if (dist < 40 && !caught) {
+                            if (Math.random() < 0.4) caught = p;
+                        }
+                    });
+
+                    if (caught) {
+                        claw.heldPrize = caught;
+                        caught.isHeld = true;
+                    }
+                    state = 'LIFTING';
+                }
+                break;
+            case 'LIFTING':
+                if (claw.y > 50) {
+                    claw.y -= claw.speed;
+                    if (claw.heldPrize && Math.random() < 0.005 && claw.y > 150) {
+                        claw.heldPrize.isHeld = false;
+                        claw.heldPrize.vy = 2;
+                        claw.heldPrize = null;
+                        claw.open = 0.6;
+                        playFailSound();
+                    }
+                } else {
+                    state = 'RETURNING';
+                }
+                break;
+            case 'RETURNING':
+                if (claw.x > 50) {
+                    claw.x -= claw.speed;
+                } else {
+                    state = 'RELEASING';
+                }
+                break;
+            case 'RELEASING':
+                claw.open = Math.min(1, claw.open + 0.1);
+                if (claw.open >= 1) {
+                    if (claw.heldPrize) {
+                        claw.heldPrize.isHeld = false;
+                        claw.heldPrize.vy = 5;
+                        if (claw.x < 110) {
+                            score++;
+                            scoreDisplay.innerText = `PREMIOS: ${score}`;
+                            showMessage("¡LO LOGRASTE, MIGUEL!");
+                            playWinSound();
+                            const p = claw.heldPrize;
+                            setTimeout(() => p.reset(), 2000);
+                        } else {
+                            playFailSound();
+                        }
+                        claw.heldPrize = null;
+                    }
+                    state = 'IDLE';
+                }
+                break;
+        }
+    }
+
+    function gameLoop() {
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        ctx.fillRect(0, height - 40, width, 40);
+        prizes.forEach(p => p.draw());
+        drawClaw();
+        update();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Eventos
+    audioToggle.onclick = () => {
+        initAudio();
+        audioEnabled = !audioEnabled;
+        audioToggle.innerText = audioEnabled ? "🔊 SONIDO: ON" : "🔇 SONIDO: OFF";
+        audioToggle.style.color = audioEnabled ? "#4ade80" : "#f87171";
+    };
+
+    const btnLeft = document.getElementById('moveLeft');
+    const btnRight = document.getElementById('moveRight');
+    const btnDrop = document.getElementById('dropBtn');
+
+    btnLeft.onmousedown = btnLeft.ontouchstart = (e) => {
+        if (state === 'IDLE') state = 'MOVING_LEFT';
+        e.preventDefault();
+    };
+    btnLeft.onmouseup = btnLeft.ontouchend = () => {
+        if (state === 'MOVING_LEFT') state = 'IDLE';
+    };
+
+    btnRight.onmousedown = btnRight.ontouchstart = (e) => {
+        if (state === 'IDLE') state = 'MOVING_RIGHT';
+        e.preventDefault();
+    };
+    btnRight.onmouseup = btnRight.ontouchend = () => {
+        if (state === 'MOVING_RIGHT') state = 'IDLE';
+    };
+
+    btnDrop.onclick = () => {
+        if (state === 'IDLE' || state === 'MOVING_LEFT' || state === 'MOVING_RIGHT') {
+            state = 'DROPPING';
+            playDropSound();
+        }
+    };
+
+    window.addEventListener('resize', resize);
+    window.onload = init;
+</script>
+</body>
+</html>
